@@ -71,64 +71,155 @@ namespace Discord.Addons.CommandCache
         /// </summary>
         public bool IsReadOnly => false;
 
+        /// <summary>
+        /// Gets or sets the value of a pair by using the key.
+        /// </summary>
+        /// <param name="key">The key to search with.</param>
+        /// <exception cref="KeyNotFoundException">Thrown if key is not in the cache.</exception>
         public ulong this[ulong key]
         {
-            // TODO: Implement indexer.
+            get
+            {
+                if (TryGetValue(key, out ulong value))
+                {
+                    return value;
+                }
+
+                throw new KeyNotFoundException($"The key {key} was not found in the cache.");
+            }
+
+            set
+            {
+                // Get the pair with the matching key or the default.
+                var pair = _cache.FirstOrDefault(p => p.Key == key);
+
+                // If the pair is in the cache, remove it and add the edited version at the same location.
+                if (!pair.Equals(default(KeyValuePair<ulong, ulong>)))
+                {
+                    var index = _cache.IndexOf(pair);
+                    _cache.RemoveAt(index);
+                    _cache.Insert(index, new KeyValuePair<ulong, ulong>(key, pair.Value));
+                }
+
+                // Otherwise throw an exception as the key is not in the cache.
+                throw new KeyNotFoundException($"The key {key} was not found in the cache.");
+            }
         }
 
-        public void Add(ulong key, ulong value)
-        {
-            throw new NotImplementedException();
-        }
+        /// <summary>
+        /// Add a new command/response pair to the cache.
+        /// </summary>
+        /// <param name="key">The ID of the command message.</param>
+        /// <param name="value">The ID of the response message.</param>
+        public void Add(ulong key, ulong value) => Add(new KeyValuePair<ulong, ulong>(key, value));
 
+        /// <summary>
+        /// Add a command/response pair to the cache.
+        /// </summary>
+        /// <param name="item">A KeyValuePair representing the IDs of the command and response messages.</param>
         public void Add(KeyValuePair<ulong, ulong> item)
         {
-            throw new NotImplementedException();
+            if (_cache.Count >= _max && _max != UNLIMITED)
+            {
+                // If the number of items in the cacher is greater than or equal to the max and the cache is not unlimited,
+                // remove items starting from the zeroth element until there are (max - 1) elements in the cache.
+                _cache.RemoveRange(0, (_cache.Count - _max) + 1);
+            }
+
+            // Finally, add the item.
+            _cache.Add(item);
         }
 
-        public void Clear()
-        {
-            throw new NotImplementedException();
-        }
+        /// <summary>
+        /// Clears all items from the cache.
+        /// </summary>
+        public void Clear() => _cache.Clear();
 
-        public bool Contains(KeyValuePair<ulong, ulong> item)
-        {
-            throw new NotImplementedException();
-        }
+        /// <summary>
+        /// Checks if the cache contains a specific command/response pair.
+        /// </summary>
+        /// <param name="item">The pair to check for.</param>
+        /// <returns>Whether or not item is in the cache.</returns>
+        public bool Contains(KeyValuePair<ulong, ulong> item) => _cache.Contains(item);
 
-        public bool ContainsKey(ulong key)
-        {
-            throw new NotImplementedException();
-        }
+        /// <summary>
+        /// Checks whether the cache contains a pair with a certain key.
+        /// </summary>
+        /// <param name="key">The key to search for.</param>
+        /// <returns>Whether or not the key was found.</returns>
+        public bool ContainsKey(ulong key) => _cache.Select(p => p.Key).Contains(key);
 
-        public void CopyTo(KeyValuePair<ulong, ulong>[] array, int arrayIndex)
-        {
-            throw new NotImplementedException();
-        }
+        /// <summary>
+        /// Copies a range of the cache to an array, starting at a specified index and going until the last element.
+        /// </summary>
+        /// <param name="array">The array to copy to.</param>
+        /// <param name="arrayIndex">The index to start copying from.</param>
+        public void CopyTo(KeyValuePair<ulong, ulong>[] array, int arrayIndex) => _cache.CopyTo(array, arrayIndex);
 
-        public IEnumerator<KeyValuePair<ulong, ulong>> GetEnumerator()
-        {
-            throw new NotImplementedException();
-        }
+        public IEnumerator<KeyValuePair<ulong, ulong>> GetEnumerator() => _cache.GetEnumerator();
 
+        /// <summary>
+        /// Removes a pair from the cache by key.
+        /// </summary>
+        /// <param name="key">The key to search for.</param>
+        /// <returns>Whether or not the removal operation was successful.</returns>
         public bool Remove(ulong key)
         {
-            throw new NotImplementedException();
+            // Get either the pair with the specified key, or the default value for a KeyValuePair<ulong, ulong>.
+            var pair = _cache.FirstOrDefault(p => p.Key == key);
+
+            // If pair is not the default, try to remove it.
+            if (!pair.Equals(default(KeyValuePair<ulong, ulong>)))
+            {
+                return _cache.Remove(pair);
+            }
+
+            // Otherwise it's not in the cache so return false.
+            return false;
         }
 
-        public bool Remove(KeyValuePair<ulong, ulong> item)
-        {
-            throw new NotImplementedException();
-        }
+        /// <summary>
+        /// Removes a pair from the cache.
+        /// </summary>
+        /// <param name="item">The command/response pair to remove.</param>
+        /// <returns>Whether or not the removal operation was successful.</returns>
+        public bool Remove(KeyValuePair<ulong, ulong> item) => _cache.Remove(item);
 
+        /// <summary>
+        /// Tries to get the value of a pair by key.
+        /// </summary>
+        /// <param name="key">The key to search for.</param>
+        /// <param name="value">The value of the pair (0 if the key is not found).</param>
+        /// <returns>Whether or not key was found in the cache.</returns>
         public bool TryGetValue(ulong key, out ulong value)
         {
-            throw new NotImplementedException();
+            // Get either the matching pair or default.
+            var pair = _cache.FirstOrDefault(p => p.Key == key);
+
+            // If a pair was found, return true and assign its value to the out param.
+            if (!pair.Equals(default(KeyValuePair<ulong, ulong>)))
+            {
+                value = pair.Value;
+                return true;
+            }
+
+            // Otherwise assign 0 and return false.
+            value = 0;
+            return false;
         }
 
-        IEnumerator IEnumerable.GetEnumerator()
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        /// <summary>
+        /// Safely disposes of the private timer.
+        /// </summary>
+        public void Dispose()
         {
-            throw new NotImplementedException();
+            if (_autoClear != null)
+            {
+                _autoClear.Dispose();
+                _autoClear = null;
+            }
         }
     }
 }
