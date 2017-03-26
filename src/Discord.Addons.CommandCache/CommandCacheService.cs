@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Collections;
 using System.Linq;
+using Discord.Net;
 
 namespace Discord.Addons.CommandCache
 {
@@ -39,7 +40,49 @@ namespace Discord.Addons.CommandCache
                 _max = capacity;
             }
 
-            // TODO: Add message deleted & timer handlers.
+            _autoClear = new Timer(_ =>
+            {
+                foreach (var pair in _cache)
+                {
+                    // The timestamp of a message can be calculated by getting the leftmost 42 bits of the ID, then
+                    // adding January 1, 2015 as a Unix timestamp.
+                    DateTimeOffset timestamp = DateTimeOffset.FromUnixTimeMilliseconds((long)((pair.Key >> 22) + 1420070400000UL));
+                    TimeSpan difference = DateTimeOffset.UtcNow - timestamp;
+
+                    int deletedCount = 0;
+                    if (difference.TotalHours >= 2.0)
+                    {
+                        _cache.Remove(pair);
+                        deletedCount++;
+                    }
+
+                    _logger(new LogMessage(LogSeverity.Verbose, "CommandCacheService", $"Cleaned {deletedCount} old messages from cache.")).RunSynchronously();
+                }
+            }, null, 7200000, 7200000);
+
+            client.MessageDeleted += async (cacheable, channel) =>
+            {
+                if (ContainsKey(cacheable.Id))
+                {
+                    try
+                    {
+                        var message = await channel.GetMessageAsync(this[cacheable.Id]);
+                        await message.DeleteAsync();
+
+                        await _logger(new LogMessage(LogSeverity.Verbose, "CommandCacheService", $"{cacheable.Id} deleted, {message.Id} deleted."));
+                    }
+                    catch (HttpException)
+                    {
+                        await _logger(new LogMessage(LogSeverity.Warning, "CommandCacheService", $"{cacheable.Id} deleted but {this[cacheable.Id]} does not exist. Removing from cache."));
+                    }
+                    finally
+                    {
+                        Remove(cacheable.Id);
+                    }
+                }
+            };
+
+            _logger(new LogMessage(LogSeverity.Verbose, "CommandCacheService", $"Service initialised, MessageDeleted successfully hooked.")).RunSynchronously();
         }
 
         ~CommandCacheService()
