@@ -27,6 +27,9 @@ namespace Discord.Addons.CommandCache
         /// <exception cref="ArgumentOutOfRangeException">Thrown if capacity is less than 1 and is not -1 (unlimited).</exception>
         public CommandCacheService(DiscordSocketClient client, int capacity = 200, Func<LogMessage, Task> log = null)
         {
+            // Initialise the cache.
+            _cache = new List<KeyValuePair<ulong, ulong>>();
+
             // If a method for logging is supplied, use it, otherwise use a method that does nothing.
             _logger = log ?? (_ => Task.CompletedTask);
 
@@ -73,7 +76,7 @@ namespace Discord.Addons.CommandCache
                     }
                     catch (HttpException)
                     {
-                        await _logger(new LogMessage(LogSeverity.Warning, "CommandCacheService", $"{cacheable.Id} deleted but {this[cacheable.Id]} does not exist. Removing from cache."));
+                        await _logger(new LogMessage(LogSeverity.Warning, "CommandCacheService", $"{cacheable.Id} deleted but {this[cacheable.Id]} does not exist."));
                     }
                     finally
                     {
@@ -87,11 +90,7 @@ namespace Discord.Addons.CommandCache
 
         ~CommandCacheService()
         {
-            if (_autoClear != null)
-            {
-                _autoClear.Dispose();
-                _autoClear = null;
-            }
+            Dispose();
         }
 
         /// <summary>
@@ -133,15 +132,12 @@ namespace Discord.Addons.CommandCache
 
             set
             {
-                // Get the pair with the matching key or the default.
-                var pair = _cache.FirstOrDefault(p => p.Key == key);
-
                 // If the pair is in the cache, remove it and add the edited version at the same location.
-                if (!pair.Equals(default(KeyValuePair<ulong, ulong>)))
+                if (TryGetPairByKey(key, out KeyValuePair<ulong, ulong> pair))
                 {
                     var index = _cache.IndexOf(pair);
                     _cache.RemoveAt(index);
-                    _cache.Insert(index, new KeyValuePair<ulong, ulong>(key, pair.Value));
+                    _cache.Insert(index, new KeyValuePair<ulong, ulong>(key, value));
                 }
 
                 // Otherwise throw an exception as the key is not in the cache.
@@ -164,7 +160,7 @@ namespace Discord.Addons.CommandCache
         {
             if (_cache.Count >= _max && _max != UNLIMITED)
             {
-                // If the number of items in the cacher is greater than or equal to the max and the cache is not unlimited,
+                // If the number of items in the cache is greater than or equal to the max and the cache is not unlimited,
                 // remove items starting from the zeroth element until there are (max - 1) elements in the cache.
                 _cache.RemoveRange(0, (_cache.Count - _max) + 1);
             }
@@ -207,12 +203,9 @@ namespace Discord.Addons.CommandCache
         /// <param name="key">The key to search for.</param>
         /// <returns>Whether or not the removal operation was successful.</returns>
         public bool Remove(ulong key)
-        {
-            // Get either the pair with the specified key, or the default value for a KeyValuePair<ulong, ulong>.
-            var pair = _cache.FirstOrDefault(p => p.Key == key);
-
-            // If pair is not the default, try to remove it.
-            if (!pair.Equals(default(KeyValuePair<ulong, ulong>)))
+        { 
+            // If the key is in the cache, try to remove its pair.
+            if (TryGetPairByKey(key, out KeyValuePair<ulong, ulong> pair))
             {
                 return _cache.Remove(pair);
             }
@@ -236,17 +229,14 @@ namespace Discord.Addons.CommandCache
         /// <returns>Whether or not key was found in the cache.</returns>
         public bool TryGetValue(ulong key, out ulong value)
         {
-            // Get either the matching pair or default.
-            var pair = _cache.FirstOrDefault(p => p.Key == key);
-
-            // If a pair was found, return true and assign its value to the out param.
-            if (!pair.Equals(default(KeyValuePair<ulong, ulong>)))
+            // If the pair is in the cache, set the value and return true..
+            if (TryGetPairByKey(key, out KeyValuePair<ulong, ulong> pair))
             {
                 value = pair.Value;
                 return true;
             }
 
-            // Otherwise assign 0 and return false.
+            // Otherwise return false and set the value to 0.
             value = 0;
             return false;
         }
@@ -263,6 +253,21 @@ namespace Discord.Addons.CommandCache
                 _autoClear.Dispose();
                 _autoClear = null;
             }
+        }
+
+        private bool TryGetPairByKey(ulong key, out KeyValuePair<ulong, ulong> pair)
+        {
+            var tryPair = _cache.FirstOrDefault(p => p.Key == key);
+            var defaultPair = default(KeyValuePair<ulong, ulong>);
+
+            if (pair.Equals(defaultPair))
+            {
+                pair = defaultPair;
+                return false;
+            }
+
+            pair = tryPair;
+            return true;
         }
     }
 }
