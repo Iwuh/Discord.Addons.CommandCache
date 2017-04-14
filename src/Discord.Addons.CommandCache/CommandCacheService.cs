@@ -45,21 +45,31 @@ namespace Discord.Addons.CommandCache
 
             _autoClear = new Timer(_ =>
             {
-                foreach (var pair in _cache)
+                // Lock the cache to ensure thread-safety while the callback is executing, as Timer executes its callback on another thread.
+                lock (_cache)
                 {
-                    // The timestamp of a message can be calculated by getting the leftmost 42 bits of the ID, then
-                    // adding January 1, 2015 as a Unix timestamp.
-                    DateTimeOffset timestamp = DateTimeOffset.FromUnixTimeMilliseconds((long)((pair.Key >> 22) + 1420070400000UL));
-                    TimeSpan difference = DateTimeOffset.UtcNow - timestamp;
-
-                    int deletedCount = 0;
-                    if (difference.TotalHours >= 2.0)
+                    /*
+                     * Get all messages where the timestamp is older than 2 hours. Then convert it to a list. The reason for this is that
+                     * Where is lazy, and the elements of the IEnumerable are merely references to the elements of the original collection.
+                     * So, iterating over the query result and removing each element from the original collection will throw an exception.
+                     * By using ToList, the elements are copied over to a new collection, and thus will not throw an exception.
+                     */
+                    var purge = _cache.Where(p =>
                     {
-                        _cache.Remove(pair);
-                        deletedCount++;
+                        // The timestamp of a message can be calculated by getting the leftmost 42 bits of the ID, then
+                        // adding January 1, 2015 as a Unix timestamp.
+                        DateTimeOffset timestamp = DateTimeOffset.FromUnixTimeMilliseconds((long)((p.Key >> 22) + 1420070400000UL));
+                        TimeSpan difference = DateTimeOffset.UtcNow - timestamp;
+
+                        return difference.TotalHours >= 2.0;
+                    }).ToList();
+
+                    foreach (var item in purge)
+                    {
+                        Remove(item);
                     }
 
-                    _logger(new LogMessage(LogSeverity.Verbose, "CommandCacheService", $"Cleaned {deletedCount} old messages from cache.")).RunSynchronously();
+                    _logger(new LogMessage(LogSeverity.Verbose, "CommandCacheService", $"Cleaned {purge.Count} items from the cache.")).RunSynchronously();
                 }
             }, null, 7200000, 7200000);
 
@@ -260,14 +270,11 @@ namespace Discord.Addons.CommandCache
             var tryPair = _cache.FirstOrDefault(p => p.Key == key);
             var defaultPair = default(KeyValuePair<ulong, ulong>);
 
-            if (pair.Equals(defaultPair))
-            {
-                pair = defaultPair;
-                return false;
-            }
-
+            // Sets the out parameter to either the retrieved pair or the default for a KeyValuePair<ulong, ulong>.
             pair = tryPair;
-            return true;
+
+            // If tryPair equals defaultPair, then a match was not found, so return false. If tryPair doesn't equal defaultPair, a match was found, so return true.
+            return !tryPair.Equals(defaultPair);
         }
     }
 }
