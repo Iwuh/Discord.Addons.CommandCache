@@ -69,7 +69,7 @@ namespace Discord.Addons.CommandCache
                         Remove(item);
                     }
 
-                    _logger(new LogMessage(LogSeverity.Verbose, "CommandCacheService", $"Cleaned {purge.Count} items from the cache.")).RunSynchronously();
+                    _logger(new LogMessage(LogSeverity.Verbose, "CommandCacheService", $"Cleaned {purge.Count} items from the cache."));
                 }
             }, null, 7200000, 7200000);
 
@@ -95,7 +95,7 @@ namespace Discord.Addons.CommandCache
                 }
             };
 
-            _logger(new LogMessage(LogSeverity.Verbose, "CommandCacheService", $"Service initialised, MessageDeleted successfully hooked.")).RunSynchronously();
+            _logger(new LogMessage(LogSeverity.Verbose, "CommandCacheService", $"Service initialised, MessageDeleted successfully hooked."));
         }
 
         ~CommandCacheService()
@@ -148,6 +148,7 @@ namespace Discord.Addons.CommandCache
                     var index = _cache.IndexOf(pair);
                     _cache.RemoveAt(index);
                     _cache.Insert(index, new KeyValuePair<ulong, ulong>(key, value));
+                    return;
                 }
 
                 // Otherwise throw an exception as the key is not in the cache.
