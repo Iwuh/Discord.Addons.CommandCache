@@ -5,6 +5,8 @@ VisualStudioVersion = 15.0.26228.9
 MinimumVisualStudioVersion = 15.0.26124.0
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Discord.Addons.CommandCache", "src\Discord.Addons.CommandCache\Discord.Addons.CommandCache.csproj", "{8AF405B7-9EEF-47F3-956A-462E6E7BD957}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Discord.Addons.CommandCache.Tests", "src\Discord.Addons.CommandCache.Tests\Discord.Addons.CommandCache.Tests.csproj", "{33AD803C-9DEE-49BA-BC72-9D279C588F9B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,18 @@ Global
 		{8AF405B7-9EEF-47F3-956A-462E6E7BD957}.Release|x64.Build.0 = Release|Any CPU
 		{8AF405B7-9EEF-47F3-956A-462E6E7BD957}.Release|x86.ActiveCfg = Release|Any CPU
 		{8AF405B7-9EEF-47F3-956A-462E6E7BD957}.Release|x86.Build.0 = Release|Any CPU
+		{33AD803C-9DEE-49BA-BC72-9D279C588F9B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{33AD803C-9DEE-49BA-BC72-9D279C588F9B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{33AD803C-9DEE-49BA-BC72-9D279C588F9B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{33AD803C-9DEE-49BA-BC72-9D279C588F9B}.Debug|x64.Build.0 = Debug|Any CPU
+		{33AD803C-9DEE-49BA-BC72-9D279C588F9B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{33AD803C-9DEE-49BA-BC72-9D279C588F9B}.Debug|x86.Build.0 = Debug|Any CPU
+		{33AD803C-9DEE-49BA-BC72-9D279C588F9B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{33AD803C-9DEE-49BA-BC72-9D279C588F9B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{33AD803C-9DEE-49BA-BC72-9D279C588F9B}.Release|x64.ActiveCfg = Release|Any CPU
+		{33AD803C-9DEE-49BA-BC72-9D279C588F9B}.Release|x64.Build.0 = Release|Any CPU
+		{33AD803C-9DEE-49BA-BC72-9D279C588F9B}.Release|x86.ActiveCfg = Release|Any CPU
+		{33AD803C-9DEE-49BA-BC72-9D279C588F9B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
