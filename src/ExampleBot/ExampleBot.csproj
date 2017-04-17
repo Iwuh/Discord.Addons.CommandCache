@@ -10,4 +10,8 @@
     <PackageReference Include="Discord.Net.WebSocket" Version="1.0.0-rc2-00701" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Discord.Addons.CommandCache\Discord.Addons.CommandCache.csproj" />
+  </ItemGroup>
+
 </Project>
