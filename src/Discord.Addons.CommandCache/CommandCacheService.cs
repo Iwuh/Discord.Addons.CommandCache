@@ -84,7 +84,7 @@ namespace Discord.Addons.CommandCache
 
                         await _logger(new LogMessage(LogSeverity.Verbose, "CommandCacheService", $"{cacheable.Id} deleted, {message.Id} deleted."));
                     }
-                    catch (HttpException)
+                    catch (NullReferenceException)
                     {
                         await _logger(new LogMessage(LogSeverity.Warning, "CommandCacheService", $"{cacheable.Id} deleted but {this[cacheable.Id]} does not exist."));
                     }
