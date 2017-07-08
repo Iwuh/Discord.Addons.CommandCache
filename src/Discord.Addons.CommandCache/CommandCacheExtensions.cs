@@ -1,5 +1,6 @@
 ﻿using Discord.Commands;
 using Discord.WebSocket;
+using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -12,17 +13,25 @@ namespace Discord.Addons.CommandCache
         /// <summary>
         /// Initialises and adds a command cache to the dependency map.
         /// </summary>
-        /// <param name="map">The map that the service should be added to.</param>
-        /// <param name="capacity">The maximum capacity of the cache.</param>
+        /// <param name="services">The IServiceCollection that the service should be added to.</param>
+        /// <param name="capacity">The maximum capacity of the cache. Must be a number greater than 0 or CommandCacheService.UNLIMITED.</param>
         /// <param name="log">A method to use for logging.</param>
         /// <returns>The client that this method was called on.</returns>
-        public static DiscordSocketClient UseCommandCache(this DiscordSocketClient client, IDependencyMap map, int capacity, Func<LogMessage, Task> log)
+        public static DiscordSocketClient UseCommandCache(this DiscordSocketClient client, IServiceCollection services, int capacity, Func<LogMessage, Task> log)
         {
-            map.Add(new CommandCacheService(client, capacity, log));
+            services.AddSingleton(new CommandCacheService(client, capacity, log));
             return client;
         }
 
-        public static async Task<IUserMessage> SendCachedMessageAsync(this IMessageChannel channel, CommandCacheService cache, ulong commandId, string text = "", bool prependZWSP = false)
+        /// <summary>
+        /// Sends a message to a channel, then adds it to the command cache.
+        /// </summary>
+        /// <param name="cache">The command cache that the messages should be added to.</param>
+        /// <param name="commandId">The ID of the command message.</param>
+        /// <param name="text">The content of the message.</param>
+        /// <param name="prependZWSP">Whether or not to prepend the message with a zero-width space.</param>
+        /// <returns>The message that was sent.</returns>
+        public static async Task<IUserMessage> SendCachedMessageAsync(this IMessageChannel channel, CommandCacheService cache, ulong commandId, string text, bool prependZWSP = false)
         {
             var message = await channel.SendMessageAsync(prependZWSP ? "\x200b" + text : text);
             cache.Add(commandId, message.Id);

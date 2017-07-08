@@ -2,6 +2,7 @@
 using Discord.Addons.CommandCache;
 using Discord.Commands;
 using Discord.WebSocket;
+using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -13,15 +14,15 @@ namespace ExampleBot
         static void Main(string[] args) => new Program().StartAsync().GetAwaiter().GetResult();
 
         private DiscordSocketClient _client;
-        private DependencyMap _map;
+        private IServiceProvider _provider;
         private CommandService _commands;
 
         public async Task StartAsync()
         {
-            _map = new DependencyMap();
+            var services = new ServiceCollection();
 
-            _client = new DiscordSocketClient().UseCommandCache(_map, 200, Log);
-            _map.Add(_client);
+            _client = new DiscordSocketClient().UseCommandCache(services, 200, Log);
+            _provider = ConfigureServices(services);
 
             _commands = new CommandService();
             await _commands.AddModulesAsync(Assembly.GetEntryAssembly());
@@ -51,8 +52,14 @@ namespace ExampleBot
             if (userMessage.HasCharPrefix('+', ref argPos))
             {
                 var context = new CommandContext(_client, userMessage);
-                await _commands.ExecuteAsync(context, argPos, _map);
+                await _commands.ExecuteAsync(context, argPos, _provider);
             }
+        }
+
+        private IServiceProvider ConfigureServices(IServiceCollection services)
+        {
+            services.AddSingleton(_client);
+            return services.BuildServiceProvider();           
         }
     }
 }

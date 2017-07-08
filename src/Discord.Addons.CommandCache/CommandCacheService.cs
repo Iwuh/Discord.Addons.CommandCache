@@ -69,7 +69,7 @@ namespace Discord.Addons.CommandCache
                         Remove(item);
                     }
 
-                    _logger(new LogMessage(LogSeverity.Verbose, "CommandCacheService", $"Cleaned {purge.Count} items from the cache."));
+                    _logger(new LogMessage(LogSeverity.Verbose, "Command Cache", $"Cleaned {purge.Count} items from the cache."));
                 }
             }, null, 7200000, 7200000);
 
@@ -82,11 +82,11 @@ namespace Discord.Addons.CommandCache
                         var message = await channel.GetMessageAsync(this[cacheable.Id]);
                         await message.DeleteAsync();
 
-                        await _logger(new LogMessage(LogSeverity.Verbose, "CommandCacheService", $"{cacheable.Id} deleted, {message.Id} deleted."));
+                        await _logger(new LogMessage(LogSeverity.Verbose, "Command Cache", $"{cacheable.Id} deleted, {message.Id} deleted."));
                     }
                     catch (NullReferenceException)
                     {
-                        await _logger(new LogMessage(LogSeverity.Warning, "CommandCacheService", $"{cacheable.Id} deleted but {this[cacheable.Id]} does not exist."));
+                        await _logger(new LogMessage(LogSeverity.Warning, "Command Cache", $"{cacheable.Id} deleted but {this[cacheable.Id]} does not exist."));
                     }
                     finally
                     {
@@ -95,7 +95,7 @@ namespace Discord.Addons.CommandCache
                 }
             };
 
-            _logger(new LogMessage(LogSeverity.Verbose, "CommandCacheService", $"Service initialised, MessageDeleted successfully hooked."));
+            _logger(new LogMessage(LogSeverity.Verbose, "Command Cache", $"Service initialised, MessageDeleted successfully hooked."));
         }
 
         ~CommandCacheService()
