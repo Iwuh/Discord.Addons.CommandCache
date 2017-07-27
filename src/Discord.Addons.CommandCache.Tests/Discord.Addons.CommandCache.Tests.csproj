@@ -5,8 +5,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Discord.Net.Commands" Version="1.0.1-build-00792" />
-    <PackageReference Include="Discord.Net.WebSocket" Version="1.0.1-build-00792" />
+    <PackageReference Include="Discord.Net.Commands" Version="1.0.1" />
+    <PackageReference Include="Discord.Net.WebSocket" Version="1.0.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.3.0-preview-20170628-02" />
     <PackageReference Include="xunit" Version="2.3.0-beta3-build3705" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.3.0-beta3-build3705" />
