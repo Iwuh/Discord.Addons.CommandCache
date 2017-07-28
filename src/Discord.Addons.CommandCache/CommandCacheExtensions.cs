@@ -2,6 +2,7 @@
 using Discord.WebSocket;
 using Microsoft.Extensions.DependencyInjection;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
@@ -37,6 +38,20 @@ namespace Discord.Addons.CommandCache
             cache.Add(commandId, message.Id);
 
             return message;
+        }
+
+        /// <summary>
+        /// Adds multiple values to a ConcurrentBag.
+        /// </summary>
+        /// <typeparam name="T">The type of values contained in the bag.</typeparam>
+        /// <param name="values">The values to add.</param>
+        public static ConcurrentBag<T> AddMany<T>(this ConcurrentBag<T> bag, IEnumerable<T> values)
+        {
+            foreach (T item in values)
+            {
+                bag.Add(item);
+            }
+            return bag;
         }
     }
 }

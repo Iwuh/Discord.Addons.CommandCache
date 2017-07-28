@@ -6,14 +6,18 @@ using System.Threading.Tasks;
 using System.Collections;
 using System.Linq;
 using Discord.Net;
+using System.Collections.Concurrent;
 
 namespace Discord.Addons.CommandCache
 {
-    public class CommandCacheService : IDictionary<ulong, ulong>, IDisposable
+    /// <summary>
+    /// A thread-safe class used to automatically delete response messages when the command message is deleted.
+    /// </summary>
+    public class CommandCacheService : IDictionary<ulong, ConcurrentBag<ulong>>, IDisposable
     {
         public const int UNLIMITED = -1; // POWEEEEEEERRRRRRRR
 
-        private List<KeyValuePair<ulong, ulong>> _cache;
+        private ConcurrentDictionary<ulong, ConcurrentBag<ulong>> _cache;
         private int _max;
         private Timer _autoClear;
         private Func<LogMessage, Task> _logger;
@@ -28,7 +32,7 @@ namespace Discord.Addons.CommandCache
         public CommandCacheService(DiscordSocketClient client, int capacity = 200, Func<LogMessage, Task> log = null)
         {
             // Initialise the cache.
-            _cache = new List<KeyValuePair<ulong, ulong>>();
+            _cache = new ConcurrentDictionary<ulong, ConcurrentBag<ulong>>();
 
             // If a method for logging is supplied, use it, otherwise use a method that does nothing.
             _logger = log ?? (_ => Task.CompletedTask);
@@ -45,52 +49,48 @@ namespace Discord.Addons.CommandCache
 
             _autoClear = new Timer(_ =>
             {
-                // Lock the cache to ensure thread-safety while the callback is executing, as Timer executes its callback on another thread.
-                lock (_cache)
+                /*
+                 * Get all messages where the timestamp is older than 2 hours. Then convert it to a list. The reason for this is that
+                 * Where is lazy, and the elements of the IEnumerable are merely references to the elements of the original collection.
+                 * So, iterating over the query result and removing each element from the original collection will throw an exception.
+                 * By using ToList, the elements are copied over to a new collection, and thus will not throw an exception.
+                 */
+                var purge = _cache.Where(p =>
                 {
-                    /*
-                     * Get all messages where the timestamp is older than 2 hours. Then convert it to a list. The reason for this is that
-                     * Where is lazy, and the elements of the IEnumerable are merely references to the elements of the original collection.
-                     * So, iterating over the query result and removing each element from the original collection will throw an exception.
-                     * By using ToList, the elements are copied over to a new collection, and thus will not throw an exception.
-                     */
-                    var purge = _cache.Where(p =>
-                    {
-                        // The timestamp of a message can be calculated by getting the leftmost 42 bits of the ID, then
-                        // adding January 1, 2015 as a Unix timestamp.
-                        DateTimeOffset timestamp = DateTimeOffset.FromUnixTimeMilliseconds((long)((p.Key >> 22) + 1420070400000UL));
-                        TimeSpan difference = DateTimeOffset.UtcNow - timestamp;
+                    // The timestamp of a message can be calculated by getting the leftmost 42 bits of the ID, then
+                    // adding January 1, 2015 as a Unix timestamp.
+                    DateTimeOffset timestamp = DateTimeOffset.FromUnixTimeMilliseconds((long)((p.Key >> 22) + 1420070400000UL));
+                    TimeSpan difference = DateTimeOffset.UtcNow - timestamp;
 
-                        return difference.TotalHours >= 2.0;
-                    }).ToList();
+                    return difference.TotalHours >= 2.0;
+                }).ToList();
 
-                    foreach (var item in purge)
-                    {
-                        Remove(item);
-                    }
+                var removed = purge.Select(p => Remove(p));
 
-                    _logger(new LogMessage(LogSeverity.Verbose, "Command Cache", $"Cleaned {purge.Count} items from the cache."));
-                }
-            }, null, 7200000, 7200000);
+                _logger(new LogMessage(LogSeverity.Verbose, "Command Cache", $"Cleaned {removed.Count()} items from the cache."));
+            }, null, 7200000, 7200000); // 7,200,000 ms = 2 hrs
 
             client.MessageDeleted += async (cacheable, channel) =>
             {
                 if (ContainsKey(cacheable.Id))
                 {
-                    try
-                    {
-                        var message = await channel.GetMessageAsync(this[cacheable.Id]);
-                        await message.DeleteAsync();
+                    var messages = _cache[cacheable.Id];
 
-                        await _logger(new LogMessage(LogSeverity.Verbose, "Command Cache", $"{cacheable.Id} deleted, {message.Id} deleted."));
-                    }
-                    catch (NullReferenceException)
+                    foreach (var messageId in messages)
                     {
-                        await _logger(new LogMessage(LogSeverity.Warning, "Command Cache", $"{cacheable.Id} deleted but {this[cacheable.Id]} does not exist."));
-                    }
-                    finally
-                    {
-                        Remove(cacheable.Id);
+                        try
+                        {
+                            var message = await channel.GetMessageAsync(messageId);
+                            await message.DeleteAsync();
+                        }
+                        catch (NullReferenceException)
+                        {
+                            await _logger(new LogMessage(LogSeverity.Warning, "Command Cache", $"{cacheable.Id} deleted but {this[cacheable.Id]} does not exist."));
+                        }
+                        finally
+                        {
+                            Remove(cacheable.Id);
+                        }
                     }
                 }
             };
@@ -104,153 +104,155 @@ namespace Discord.Addons.CommandCache
         }
 
         /// <summary>
-        /// Gets all the keys in the cache.
+        /// Gets all the keys in the cache. Will claim all locks until the operation is complete.
         /// </summary>
-        public ICollection<ulong> Keys => _cache.Select(p => p.Key).ToList();
+        public ICollection<ulong> Keys => _cache.Keys;
 
         /// <summary>
-        /// Gets all the values in the cache.
+        /// Gets all the values in the cache. Will claim all locks until the operation is complete.
         /// </summary>
-        public ICollection<ulong> Values => _cache.Select(p => p.Value).ToList();
+        public ICollection<ConcurrentBag<ulong>> Values => _cache.Values;
 
         /// <summary>
-        /// Gets the number of command/response pairs in the cache.
+        /// Gets the number of command/response sets in the cache. Will claim all locks until the operation is complete.
         /// </summary>
         public int Count => _cache.Count;
 
         /// <summary>
-        /// Always returns false. Why would you ever need this to be read-only?
+        /// Gets or sets whether or not the cache is read-only.
         /// </summary>
-        public bool IsReadOnly => false;
+        public bool IsReadOnly { get; set; }
 
         /// <summary>
-        /// Gets or sets the value of a pair by using the key.
+        /// Gets or sets the value of a set by using the key.
         /// </summary>
         /// <param name="key">The key to search with.</param>
         /// <exception cref="KeyNotFoundException">Thrown if key is not in the cache.</exception>
-        public ulong this[ulong key]
+        public ConcurrentBag<ulong> this[ulong key]
         {
             get
             {
-                if (TryGetValue(key, out ulong value))
-                {
-                    return value;
-                }
-
-                throw new KeyNotFoundException($"The key {key} was not found in the cache.");
+                return _cache[key];
             }
 
             set
             {
-                // If the pair is in the cache, remove it and add the edited version at the same location.
-                if (TryGetPairByKey(key, out KeyValuePair<ulong, ulong> pair))
-                {
-                    var index = _cache.IndexOf(pair);
-                    _cache.RemoveAt(index);
-                    _cache.Insert(index, new KeyValuePair<ulong, ulong>(key, value));
-                    return;
-                }
+                if (IsReadOnly) throw new InvalidOperationException("The command cache is set to read only.");
 
-                // Otherwise throw an exception as the key is not in the cache.
-                throw new KeyNotFoundException($"The key {key} was not found in the cache.");
+                _cache[key] = value;
             }
         }
 
         /// <summary>
-        /// Add a new command/response pair to the cache.
+        /// Adds a key and multiple values to the cache, or extends the existing values if the key already exists.
         /// </summary>
-        /// <param name="key">The ID of the command message.</param>
-        /// <param name="value">The ID of the response message.</param>
-        public void Add(ulong key, ulong value) => Add(new KeyValuePair<ulong, ulong>(key, value));
-
-        /// <summary>
-        /// Add a command/response pair to the cache.
-        /// </summary>
-        /// <param name="item">A KeyValuePair representing the IDs of the command and response messages.</param>
-        public void Add(KeyValuePair<ulong, ulong> item)
+        /// <param name="key">The id of the command message.</param>
+        /// <param name="values">The ids of the response messages.</param>
+        public void Add(ulong key, ConcurrentBag<ulong> values)
         {
-            if (_cache.Count >= _max && _max != UNLIMITED)
-            {
-                // If the number of items in the cache is greater than or equal to the max and the cache is not unlimited,
-                // remove items starting from the zeroth element until there are (max - 1) elements in the cache.
-                _cache.RemoveRange(0, (_cache.Count - _max) + 1);
-            }
+            if (IsReadOnly) throw new InvalidOperationException("The command cache is set to read only.");
 
-            // Finally, add the item.
-            _cache.Add(item);
+            if (_max != UNLIMITED && _cache.Count >= _max)
+            {
+                int removeCount = (_cache.Count - _max) + 1;
+                // The left 42 bits represent the timestamp.
+                var orderedKeys = _cache.Keys.OrderBy(k => k >> 22).ToList();
+                for (int i = 0; i < removeCount; i++)
+                {
+                    Remove(orderedKeys[i]);
+                }
+            }
+            _cache.AddOrUpdate(key, values, ((existingKey, existingValues) => existingValues.AddMany(values)));
         }
 
         /// <summary>
-        /// Clears all items from the cache.
+        /// Adds a new set to the cache, or extends the existing values if the key already exists.
+        /// </summary>
+        /// <param name="pair">The key, and its values.</param>
+        public void Add(KeyValuePair<ulong, ConcurrentBag<ulong>> pair) => Add(pair.Key, pair.Value);
+
+        /// <summary>
+        /// Adds a new key and value to the cache, or extends the values of an existing key.
+        /// </summary>
+        /// <param name="key">The id of the command message.</param>
+        /// <param name="value">The id of the response message.</param>
+        public void Add(ulong key, ulong value)
+        {
+            if (IsReadOnly) throw new InvalidOperationException("The command cache is set to read only.");
+
+            if (ContainsKey(key))
+            {
+                _cache[key].Add(value);
+            }
+            else
+            {
+                Add(key, new ConcurrentBag<ulong>() { value });
+            }
+        }
+
+        /// <summary>
+        /// Adds a key and multiple values to the cache, or extends the existing values if the key already exists.
+        /// </summary>
+        /// <param name="key">The id of the command message.</param>
+        /// <param name="values">The ids of the response messages.</param>
+        public void Add(ulong key, params ulong[] values) => Add(key, new ConcurrentBag<ulong>(values));
+
+        /// <summary>
+        /// Clears all items from the cache. Will claim all locks until the operation is complete.
         /// </summary>
         public void Clear() => _cache.Clear();
 
         /// <summary>
-        /// Checks if the cache contains a specific command/response pair.
-        /// </summary>
-        /// <param name="item">The pair to check for.</param>
-        /// <returns>Whether or not item is in the cache.</returns>
-        public bool Contains(KeyValuePair<ulong, ulong> item) => _cache.Contains(item);
-
-        /// <summary>
-        /// Checks whether the cache contains a pair with a certain key.
+        /// Checks whether the cache contains a set with a certain key.
         /// </summary>
         /// <param name="key">The key to search for.</param>
         /// <returns>Whether or not the key was found.</returns>
-        public bool ContainsKey(ulong key) => _cache.Select(p => p.Key).Contains(key);
+        public bool ContainsKey(ulong key) => _cache.ContainsKey(key);
 
         /// <summary>
-        /// Copies a range of the cache to an array, starting at a specified index and going until the last element.
+        /// Checks whether the cache contains a key, and whether the key has the specified values.
+        /// </summary>
+        /// <param name="pair">The key and values to search for.</param>
+        /// <returns>Whether or not the key was found with identical values.</returns>
+        public bool Contains(KeyValuePair<ulong, ConcurrentBag<ulong>> pair)
+        {
+            if (TryGetValue(pair.Key, out ConcurrentBag<ulong> values))
+            {
+                return values.SequenceEqual(pair.Value);
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Copies a range of the cache to an array, starting at a specified index and going until the last element. Will claim all locks until the operation is complete.
         /// </summary>
         /// <param name="array">The array to copy to.</param>
         /// <param name="arrayIndex">The index to start copying from.</param>
-        public void CopyTo(KeyValuePair<ulong, ulong>[] array, int arrayIndex) => _cache.CopyTo(array, arrayIndex);
+        public void CopyTo(KeyValuePair<ulong, ConcurrentBag<ulong>>[] array, int arrayIndex) => ((IDictionary)_cache).CopyTo(array, arrayIndex);
 
-        public IEnumerator<KeyValuePair<ulong, ulong>> GetEnumerator() => _cache.GetEnumerator();
+        public IEnumerator<KeyValuePair<ulong, ConcurrentBag<ulong>>> GetEnumerator() => _cache.GetEnumerator();
 
         /// <summary>
-        /// Removes a pair from the cache by key.
+        /// Removes a set from the cache by key.
         /// </summary>
         /// <param name="key">The key to search for.</param>
         /// <returns>Whether or not the removal operation was successful.</returns>
-        public bool Remove(ulong key)
-        { 
-            // If the key is in the cache, try to remove its pair.
-            if (TryGetPairByKey(key, out KeyValuePair<ulong, ulong> pair))
-            {
-                return _cache.Remove(pair);
-            }
-
-            // Otherwise it's not in the cache so return false.
-            return false;
-        }
+        public bool Remove(ulong key) => _cache.TryRemove(key, out ConcurrentBag<ulong> _);
 
         /// <summary>
-        /// Removes a pair from the cache.
+        /// Removes a set from the cache.
         /// </summary>
-        /// <param name="item">The command/response pair to remove.</param>
+        /// <param name="item">The command/response set to remove.</param>
         /// <returns>Whether or not the removal operation was successful.</returns>
-        public bool Remove(KeyValuePair<ulong, ulong> item) => _cache.Remove(item);
+        public bool Remove(KeyValuePair<ulong, ConcurrentBag<ulong>> item) => Remove(item.Key);
 
         /// <summary>
-        /// Tries to get the value of a pair by key.
+        /// Tries to get the values of a set by key.
         /// </summary>
         /// <param name="key">The key to search for.</param>
-        /// <param name="value">The value of the pair (0 if the key is not found).</param>
+        /// <param name="value">The values of the set (0 if the key is not found).</param>
         /// <returns>Whether or not key was found in the cache.</returns>
-        public bool TryGetValue(ulong key, out ulong value)
-        {
-            // If the pair is in the cache, set the value and return true..
-            if (TryGetPairByKey(key, out KeyValuePair<ulong, ulong> pair))
-            {
-                value = pair.Value;
-                return true;
-            }
-
-            // Otherwise return false and set the value to 0.
-            value = 0;
-            return false;
-        }
+        public bool TryGetValue(ulong key, out ConcurrentBag<ulong> value) => _cache.TryGetValue(key, out value);
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
@@ -264,18 +266,6 @@ namespace Discord.Addons.CommandCache
                 _autoClear.Dispose();
                 _autoClear = null;
             }
-        }
-
-        private bool TryGetPairByKey(ulong key, out KeyValuePair<ulong, ulong> pair)
-        {
-            var tryPair = _cache.FirstOrDefault(p => p.Key == key);
-            var defaultPair = default(KeyValuePair<ulong, ulong>);
-
-            // Sets the out parameter to either the retrieved pair or the default for a KeyValuePair<ulong, ulong>.
-            pair = tryPair;
-
-            // If tryPair equals defaultPair, then a match was not found, so return false. If tryPair doesn't equal defaultPair, a match was found, so return true.
-            return !tryPair.Equals(defaultPair);
         }
     }
 }
