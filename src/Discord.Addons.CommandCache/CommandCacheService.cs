@@ -214,7 +214,7 @@ namespace Discord.Addons.CommandCache
         /// </summary>
         /// <param name="pair">The key and values to search for.</param>
         /// <returns>Whether or not the key was found with identical values.</returns>
-        public bool Contains(KeyValuePair<ulong, ConcurrentBag<ulong>> pair)
+        bool ICollection<KeyValuePair<ulong, ConcurrentBag<ulong>>>.Contains(KeyValuePair<ulong, ConcurrentBag<ulong>> pair)
         {
             if (TryGetValue(pair.Key, out ConcurrentBag<ulong> values))
             {
@@ -228,7 +228,7 @@ namespace Discord.Addons.CommandCache
         /// </summary>
         /// <param name="array">The array to copy to.</param>
         /// <param name="arrayIndex">The index to start copying from.</param>
-        public void CopyTo(KeyValuePair<ulong, ConcurrentBag<ulong>>[] array, int arrayIndex) => ((IDictionary)_cache).CopyTo(array, arrayIndex);
+        void ICollection<KeyValuePair<ulong, ConcurrentBag<ulong>>>.CopyTo(KeyValuePair<ulong, ConcurrentBag<ulong>>[] array, int arrayIndex) => ((IDictionary)_cache).CopyTo(array, arrayIndex);
 
         public IEnumerator<KeyValuePair<ulong, ConcurrentBag<ulong>>> GetEnumerator() => _cache.GetEnumerator();
 
