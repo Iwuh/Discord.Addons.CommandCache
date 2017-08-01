@@ -1,19 +1,18 @@
 ﻿using Discord.WebSocket;
 using System;
+using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections;
-using System.Linq;
-using Discord.Net;
-using System.Collections.Concurrent;
 
 namespace Discord.Addons.CommandCache
 {
     /// <summary>
     /// A thread-safe class used to automatically delete response messages when the command message is deleted.
     /// </summary>
-    public class CommandCacheService : IDictionary<ulong, ConcurrentBag<ulong>>, IDisposable
+    public class CommandCacheService : ICommandCache<ulong, ConcurrentBag<ulong>>
     {
         public const int UNLIMITED = -1; // POWEEEEEEERRRRRRRR
 
@@ -50,10 +49,8 @@ namespace Discord.Addons.CommandCache
             _autoClear = new Timer(_ =>
             {
                 /*
-                 * Get all messages where the timestamp is older than 2 hours. Then convert it to a list. The reason for this is that
-                 * Where is lazy, and the elements of the IEnumerable are merely references to the elements of the original collection.
-                 * So, iterating over the query result and removing each element from the original collection will throw an exception.
-                 * By using ToList, the elements are copied over to a new collection, and thus will not throw an exception.
+                 * Get all messages where the timestamp is older than 2 hours, then convert it to a list. The result of where merely contains references to the original
+                 * collection, so iterating and removing will throw an exception. Converting it to a list first avoids this.
                  */
                 var purge = _cache.Where(p =>
                 {
@@ -65,7 +62,7 @@ namespace Discord.Addons.CommandCache
                     return difference.TotalHours >= 2.0;
                 }).ToList();
 
-                var removed = purge.Select(p => Remove(p));
+                var removed = purge.Where(p => Remove(p.Key) == true);
 
                 _logger(new LogMessage(LogSeverity.Verbose, "Command Cache", $"Cleaned {removed.Count()} items from the cache."));
             }, null, 7200000, 7200000); // 7,200,000 ms = 2 hrs
@@ -106,22 +103,17 @@ namespace Discord.Addons.CommandCache
         /// <summary>
         /// Gets all the keys in the cache. Will claim all locks until the operation is complete.
         /// </summary>
-        public ICollection<ulong> Keys => _cache.Keys;
+        public IEnumerable<ulong> Keys => _cache.Keys;
 
         /// <summary>
         /// Gets all the values in the cache. Will claim all locks until the operation is complete.
         /// </summary>
-        public ICollection<ConcurrentBag<ulong>> Values => _cache.Values;
+        public IEnumerable<ConcurrentBag<ulong>> Values => _cache.Values;
 
         /// <summary>
         /// Gets the number of command/response sets in the cache. Will claim all locks until the operation is complete.
         /// </summary>
         public int Count => _cache.Count;
-
-        /// <summary>
-        /// Gets or sets whether or not the cache is read-only.
-        /// </summary>
-        public bool IsReadOnly { get; set; }
 
         /// <summary>
         /// Gets or sets the value of a set by using the key.
@@ -137,8 +129,6 @@ namespace Discord.Addons.CommandCache
 
             set
             {
-                if (IsReadOnly) throw new InvalidOperationException("The command cache is set to read only.");
-
                 _cache[key] = value;
             }
         }
@@ -150,16 +140,16 @@ namespace Discord.Addons.CommandCache
         /// <param name="values">The ids of the response messages.</param>
         public void Add(ulong key, ConcurrentBag<ulong> values)
         {
-            if (IsReadOnly) throw new InvalidOperationException("The command cache is set to read only.");
-
             if (_max != UNLIMITED && _cache.Count >= _max)
             {
                 int removeCount = (_cache.Count - _max) + 1;
                 // The left 42 bits represent the timestamp.
                 var orderedKeys = _cache.Keys.OrderBy(k => k >> 22).ToList();
-                for (int i = 0; i < removeCount; i++)
+                int i = 0;
+                while (i < removeCount && i < orderedKeys.Count)
                 {
-                    Remove(orderedKeys[i]);
+                    var success = Remove(orderedKeys[i]);
+                    if (success) i++;
                 }
             }
             _cache.AddOrUpdate(key, values, ((existingKey, existingValues) => existingValues.AddMany(values)));
@@ -178,8 +168,6 @@ namespace Discord.Addons.CommandCache
         /// <param name="value">The id of the response message.</param>
         public void Add(ulong key, ulong value)
         {
-            if (IsReadOnly) throw new InvalidOperationException("The command cache is set to read only.");
-
             if (ContainsKey(key))
             {
                 _cache[key].Add(value);
@@ -209,27 +197,6 @@ namespace Discord.Addons.CommandCache
         /// <returns>Whether or not the key was found.</returns>
         public bool ContainsKey(ulong key) => _cache.ContainsKey(key);
 
-        /// <summary>
-        /// Checks whether the cache contains a key, and whether the key has the specified values.
-        /// </summary>
-        /// <param name="pair">The key and values to search for.</param>
-        /// <returns>Whether or not the key was found with identical values.</returns>
-        bool ICollection<KeyValuePair<ulong, ConcurrentBag<ulong>>>.Contains(KeyValuePair<ulong, ConcurrentBag<ulong>> pair)
-        {
-            if (TryGetValue(pair.Key, out ConcurrentBag<ulong> values))
-            {
-                return values.SequenceEqual(pair.Value);
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// Copies a range of the cache to an array, starting at a specified index and going until the last element. Will claim all locks until the operation is complete.
-        /// </summary>
-        /// <param name="array">The array to copy to.</param>
-        /// <param name="arrayIndex">The index to start copying from.</param>
-        void ICollection<KeyValuePair<ulong, ConcurrentBag<ulong>>>.CopyTo(KeyValuePair<ulong, ConcurrentBag<ulong>>[] array, int arrayIndex) => ((IDictionary)_cache).CopyTo(array, arrayIndex);
-
         public IEnumerator<KeyValuePair<ulong, ConcurrentBag<ulong>>> GetEnumerator() => _cache.GetEnumerator();
 
         /// <summary>
@@ -238,13 +205,6 @@ namespace Discord.Addons.CommandCache
         /// <param name="key">The key to search for.</param>
         /// <returns>Whether or not the removal operation was successful.</returns>
         public bool Remove(ulong key) => _cache.TryRemove(key, out ConcurrentBag<ulong> _);
-
-        /// <summary>
-        /// Removes a set from the cache.
-        /// </summary>
-        /// <param name="item">The command/response set to remove.</param>
-        /// <returns>Whether or not the removal operation was successful.</returns>
-        public bool Remove(KeyValuePair<ulong, ConcurrentBag<ulong>> item) => Remove(item.Key);
 
         /// <summary>
         /// Tries to get the values of a set by key.
