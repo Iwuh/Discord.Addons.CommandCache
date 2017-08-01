@@ -12,11 +12,12 @@ namespace Discord.Addons.CommandCache
     /// <summary>
     /// A thread-safe class used to automatically delete response messages when the command message is deleted.
     /// </summary>
-    public class CommandCacheService : ICommandCache<ulong, ConcurrentBag<ulong>>
+    public class CommandCacheService : ICommandCache<ulong, ConcurrentBag<ulong>>, IDisposable
     {
         public const int UNLIMITED = -1; // POWEEEEEEERRRRRRRR
 
-        private ConcurrentDictionary<ulong, ConcurrentBag<ulong>> _cache;
+        private readonly ConcurrentDictionary<ulong, ConcurrentBag<ulong>> _cache
+            = new ConcurrentDictionary<ulong, ConcurrentBag<ulong>>();
         private int _max;
         private Timer _autoClear;
         private Func<LogMessage, Task> _logger;
@@ -30,74 +31,24 @@ namespace Discord.Addons.CommandCache
         /// <exception cref="ArgumentOutOfRangeException">Thrown if capacity is less than 1 and is not -1 (unlimited).</exception>
         public CommandCacheService(DiscordSocketClient client, int capacity = 200, Func<LogMessage, Task> log = null)
         {
-            // Initialise the cache.
-            _cache = new ConcurrentDictionary<ulong, ConcurrentBag<ulong>>();
-
             // If a method for logging is supplied, use it, otherwise use a method that does nothing.
             _logger = log ?? (_ => Task.CompletedTask);
 
             // Make sure the max capacity is within an acceptable range, use it if it is.
             if (capacity < 1 && capacity != UNLIMITED)
             {
-                throw new ArgumentOutOfRangeException("Capacity can not be lower than 1 unless capacity is CommandCacheService.UNLIMITED.");
+                throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Capacity can not be lower than 1 unless capacity is CommandCacheService.UNLIMITED.");
             }
             else
             {
                 _max = capacity;
             }
 
-            _autoClear = new Timer(_ =>
-            {
-                /*
-                 * Get all messages where the timestamp is older than 2 hours, then convert it to a list. The result of where merely contains references to the original
-                 * collection, so iterating and removing will throw an exception. Converting it to a list first avoids this.
-                 */
-                var purge = _cache.Where(p =>
-                {
-                    // The timestamp of a message can be calculated by getting the leftmost 42 bits of the ID, then
-                    // adding January 1, 2015 as a Unix timestamp.
-                    DateTimeOffset timestamp = DateTimeOffset.FromUnixTimeMilliseconds((long)((p.Key >> 22) + 1420070400000UL));
-                    TimeSpan difference = DateTimeOffset.UtcNow - timestamp;
+            _autoClear = new Timer(OnTimerFired, null, 7200000, 7200000); // 7,200,000 ms = 2 hrs
 
-                    return difference.TotalHours >= 2.0;
-                }).ToList();
-
-                var removed = purge.Where(p => Remove(p.Key) == true);
-
-                _logger(new LogMessage(LogSeverity.Verbose, "Command Cache", $"Cleaned {removed.Count()} items from the cache."));
-            }, null, 7200000, 7200000); // 7,200,000 ms = 2 hrs
-
-            client.MessageDeleted += async (cacheable, channel) =>
-            {
-                if (ContainsKey(cacheable.Id))
-                {
-                    var messages = _cache[cacheable.Id];
-
-                    foreach (var messageId in messages)
-                    {
-                        try
-                        {
-                            var message = await channel.GetMessageAsync(messageId);
-                            await message.DeleteAsync();
-                        }
-                        catch (NullReferenceException)
-                        {
-                            await _logger(new LogMessage(LogSeverity.Warning, "Command Cache", $"{cacheable.Id} deleted but {this[cacheable.Id]} does not exist."));
-                        }
-                        finally
-                        {
-                            Remove(cacheable.Id);
-                        }
-                    }
-                }
-            };
+            client.MessageDeleted += OnMessageDeleted;
 
             _logger(new LogMessage(LogSeverity.Verbose, "Command Cache", $"Service initialised, MessageDeleted successfully hooked."));
-        }
-
-        ~CommandCacheService()
-        {
-            Dispose();
         }
 
         /// <summary>
@@ -116,33 +67,21 @@ namespace Discord.Addons.CommandCache
         public int Count => _cache.Count;
 
         /// <summary>
-        /// Gets or sets the value of a set by using the key.
-        /// </summary>
-        /// <param name="key">The key to search with.</param>
-        /// <exception cref="KeyNotFoundException">Thrown if key is not in the cache.</exception>
-        public ConcurrentBag<ulong> this[ulong key]
-        {
-            get
-            {
-                return _cache[key];
-            }
-
-            set
-            {
-                _cache[key] = value;
-            }
-        }
-
-        /// <summary>
         /// Adds a key and multiple values to the cache, or extends the existing values if the key already exists.
         /// </summary>
         /// <param name="key">The id of the command message.</param>
         /// <param name="values">The ids of the response messages.</param>
+        /// <exception cref="ArgumentNullException">Thrown if values is null.</exception>
         public void Add(ulong key, ConcurrentBag<ulong> values)
         {
+            if (values == null)
+            {
+                throw new ArgumentNullException(nameof(values), "The supplied collection can not be null.");
+            }
+
             if (_max != UNLIMITED && _cache.Count >= _max)
             {
-                int removeCount = (_cache.Count - _max) + 1;
+                int removeCount = _cache.Count - _max + 1;
                 // The left 42 bits represent the timestamp.
                 var orderedKeys = _cache.Keys.OrderBy(k => k >> 22).ToList();
                 int i = 0;
@@ -152,7 +91,7 @@ namespace Discord.Addons.CommandCache
                     if (success) i++;
                 }
             }
-            _cache.AddOrUpdate(key, values, ((existingKey, existingValues) => existingValues.AddMany(values)));
+            _cache.AddOrUpdate(key, values, (existingKey, existingValues) => existingValues.AddMany(values));
         }
 
         /// <summary>
@@ -167,15 +106,12 @@ namespace Discord.Addons.CommandCache
         /// <param name="key">The id of the command message.</param>
         /// <param name="value">The id of the response message.</param>
         public void Add(ulong key, ulong value)
-        {
-            if (ContainsKey(key))
+        {            
+            if (!TryGetValue(key, out ConcurrentBag<ulong> bag))
             {
-                _cache[key].Add(value);
+                Add(key, bag = new ConcurrentBag<ulong>() { value });
             }
-            else
-            {
-                Add(key, new ConcurrentBag<ulong>() { value });
-            }
+            bag.Add(value);
         }
 
         /// <summary>
@@ -221,10 +157,54 @@ namespace Discord.Addons.CommandCache
         /// </summary>
         public void Dispose()
         {
-            if (_autoClear != null)
+            Dispose(true);
+        }
+
+        protected void Dispose(bool disposing)
+        {
+            if (disposing && _autoClear != null)
             {
                 _autoClear.Dispose();
                 _autoClear = null;
+            }
+        }
+
+        private void OnTimerFired(object state)
+        {
+            // Get all messages where the timestamp is older than 2 hours, then convert it to a list. The result of where merely contains references to the original
+            // collection, so iterating and removing will throw an exception. Converting it to a list first avoids this.
+            var purge = _cache.Where(p =>
+            {
+                // The timestamp of a message can be calculated by getting the leftmost 42 bits of the ID, then
+                // adding January 1, 2015 as a Unix timestamp.
+                DateTimeOffset timestamp = DateTimeOffset.FromUnixTimeMilliseconds((long)((p.Key >> 22) + 1420070400000UL));
+                TimeSpan difference = DateTimeOffset.UtcNow - timestamp;
+
+                return difference.TotalHours >= 2.0;
+            }).ToList();
+
+            var removed = purge.Where(p => Remove(p.Key));
+
+            _logger(new LogMessage(LogSeverity.Verbose, "Command Cache", $"Cleaned {removed.Count()} items from the cache."));
+        }
+
+        private async Task OnMessageDeleted(Cacheable<IMessage, ulong> cacheable, ISocketMessageChannel channel)
+        {
+            if (TryGetValue(cacheable.Id, out ConcurrentBag<ulong> messages))
+            {
+                foreach (var messageId in messages)
+                {
+                    var message = await channel.GetMessageAsync(messageId);
+                    if (message != null)
+                    {
+                        await message.DeleteAsync();
+                    }
+                    else
+                    {
+                        await _logger(new LogMessage(LogSeverity.Warning, "Command Cache", $"{cacheable.Id} deleted but {messageId} does not exist."));
+                    }
+                    Remove(cacheable.Id);
+                }
             }
         }
     }

@@ -4,13 +4,11 @@ using System.Text;
 
 namespace Discord.Addons.CommandCache
 {
-    public interface ICommandCache<TKey, TValue> : IDisposable, IEnumerable<KeyValuePair<TKey, TValue>>
+    public interface ICommandCache<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TValue>>
     {
         IEnumerable<TKey> Keys { get; }
         IEnumerable<TValue> Values { get; }
         int Count { get; }
-
-        TValue this[TKey key] { get; set; }
 
         void Add(TKey key, TValue value);
         void Clear();
