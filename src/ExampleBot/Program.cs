@@ -51,7 +51,7 @@ namespace ExampleBot
             int argPos = 0;
             if (userMessage.HasCharPrefix('+', ref argPos))
             {
-                var context = new CommandContext(_client, userMessage);
+                var context = new SocketCommandContext(_client, userMessage);
                 await _commands.ExecuteAsync(context, argPos, _provider);
             }
         }

@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace ExampleBot
 {
-    public class TestModule : ModuleBase
+    public class TestModule : ModuleBase<SocketCommandContext>
     {
         private CommandCacheService _cache;
 
@@ -39,6 +39,18 @@ namespace ExampleBot
 
             var message = await ReplyAsync(string.Empty, embed: embed);
             _cache.Add(Context.Message.Id, message.Id);
+        }
+
+        [Command("shutdown", RunMode = RunMode.Async)]
+        [Summary("Shuts down the bot.")]
+        public async Task Shutdown()
+        {
+            _cache.Dispose();
+
+            await Context.Client.StopAsync();
+            await Context.Client.LogoutAsync();
+
+            Environment.Exit(0);
         }
     }
 }
