@@ -21,6 +21,7 @@ namespace Discord.Addons.CommandCache
         private int _max;
         private Timer _autoClear;
         private Func<LogMessage, Task> _logger;
+        private int _count;
 
         /// <summary>
         /// Initialises the cache with a maximum capacity, tracking the client's message deleted event.
@@ -62,9 +63,9 @@ namespace Discord.Addons.CommandCache
         public IEnumerable<ConcurrentBag<ulong>> Values => _cache.Values;
 
         /// <summary>
-        /// Gets the number of command/response sets in the cache. Will claim all locks until the operation is complete.
+        /// Gets the number of command/response sets in the cache.
         /// </summary>
-        public int Count => _cache.Count;
+        public int Count => _count;
 
         /// <summary>
         /// Adds a key and multiple values to the cache, or extends the existing values if the key already exists.
@@ -79,19 +80,31 @@ namespace Discord.Addons.CommandCache
                 throw new ArgumentNullException(nameof(values), "The supplied collection can not be null.");
             }
 
-            if (_max != UNLIMITED && _cache.Count >= _max)
+            if (_max != UNLIMITED && _count >= _max)
             {
-                int removeCount = _cache.Count - _max + 1;
+                int removeCount = _count - _max + 1;
                 // The left 42 bits represent the timestamp.
                 var orderedKeys = _cache.Keys.OrderBy(k => k >> 22).ToList();
+                // Remove items until we're under the maximum.
                 int i = 0;
                 while (i < removeCount && i < orderedKeys.Count)
                 {
                     var success = Remove(orderedKeys[i]);
                     if (success) i++;
                 }
+                // Reset _count to _cache.Count.
+                UpdateCount();
             }
-            _cache.AddOrUpdate(key, values, (existingKey, existingValues) => existingValues.AddMany(values));
+
+            // TryAdd will return false if the key already exists, in which case we don't want to increment the count.
+            if (_cache.TryAdd(key, values))
+            {
+                Interlocked.Increment(ref _count);
+            }
+            else
+            {
+                _cache[key].AddMany(values);
+            }
         }
 
         /// <summary>
@@ -124,7 +137,11 @@ namespace Discord.Addons.CommandCache
         /// <summary>
         /// Clears all items from the cache. Will claim all locks until the operation is complete.
         /// </summary>
-        public void Clear() => _cache.Clear();
+        public void Clear()
+        {
+            _cache.Clear();
+            Interlocked.Exchange(ref _count, 0);
+        }
 
         /// <summary>
         /// Checks whether the cache contains a set with a certain key.
@@ -140,7 +157,12 @@ namespace Discord.Addons.CommandCache
         /// </summary>
         /// <param name="key">The key to search for.</param>
         /// <returns>Whether or not the removal operation was successful.</returns>
-        public bool Remove(ulong key) => _cache.TryRemove(key, out ConcurrentBag<ulong> _);
+        public bool Remove(ulong key)
+        {
+            var success = _cache.TryRemove(key, out ConcurrentBag<ulong> _);
+            if (success) Interlocked.Decrement(ref _count);
+            return success;
+        }
 
         /// <summary>
         /// Tries to get the values of a set by key.
@@ -185,6 +207,8 @@ namespace Discord.Addons.CommandCache
 
             var removed = purge.Where(p => Remove(p.Key));
 
+            UpdateCount();
+
             _logger(new LogMessage(LogSeverity.Verbose, "Command Cache", $"Cleaned {removed.Count()} items from the cache."));
         }
 
@@ -204,8 +228,11 @@ namespace Discord.Addons.CommandCache
                         await _logger(new LogMessage(LogSeverity.Warning, "Command Cache", $"{cacheable.Id} deleted but {messageId} does not exist."));
                     }
                     Remove(cacheable.Id);
+                    Interlocked.Decrement(ref _count);
                 }
             }
         }
+
+        private void UpdateCount() => Interlocked.Exchange(ref _count, _cache.Count);
     }
 }
