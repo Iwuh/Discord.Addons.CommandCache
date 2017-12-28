@@ -11,6 +11,7 @@ namespace Discord.Addons.CommandCache
         int Count { get; }
 
         void Add(TKey key, TValue value);
+        void Add(IUserMessage command, IUserMessage response);
         void Clear();
         bool ContainsKey(TKey key);
         bool Remove(TKey key);

@@ -3,27 +3,21 @@ using Discord.Addons.CommandCache;
 using Discord.Commands;
 using Discord.WebSocket;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace ExampleBot
 {
-    public class TestModule : ModuleBase<SocketCommandContext>
+    public class TestModule : CommandCacheModuleBase<SocketCommandContext>
     {
-        private CommandCacheService _cache;
-
-        public TestModule(CommandCacheService ccs)
-        {
-            _cache = ccs;
-        }
-
         [Command("add")]
         [Summary("Adds two whole numbers together.")]
         public async Task Add(int first, int second)
         {
             // Deleting the command message will automatically delete the response message sent by the line below.
-            await Context.Message.Channel.SendCachedMessageAsync(_cache, Context.Message.Id, $"{first} plus {second} is {first + second}.");
+            await ReplyAsync($"{first} plus {second} is {first + second}.");
         }
 
         [Command("info")]
@@ -38,14 +32,14 @@ namespace ExampleBot
                 .AddField(f => f.WithName("Total Guilds:").WithValue((Context.Client as DiscordSocketClient).Guilds.Count).WithIsInline(true));
 
             var message = await ReplyAsync(string.Empty, embed: embed);
-            _cache.Add(Context.Message.Id, message.Id);
+            Cache.Add(Context.Message.Id, message.Id);
         }
 
         [Command("shutdown", RunMode = RunMode.Async)]
         [Summary("Shuts down the bot.")]
         public async Task Shutdown()
         {
-            _cache.Dispose();
+            Cache.Dispose();
 
             await Context.Client.StopAsync();
             await Context.Client.LogoutAsync();

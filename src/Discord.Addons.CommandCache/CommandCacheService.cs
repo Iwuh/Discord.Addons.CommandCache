@@ -124,7 +124,10 @@ namespace Discord.Addons.CommandCache
             {
                 Add(key, bag = new ConcurrentBag<ulong>() { value });
             }
-            bag.Add(value);
+            else
+            {
+                bag.Add(value);
+            }
         }
 
         /// <summary>
@@ -133,6 +136,13 @@ namespace Discord.Addons.CommandCache
         /// <param name="key">The id of the command message.</param>
         /// <param name="values">The ids of the response messages.</param>
         public void Add(ulong key, params ulong[] values) => Add(key, new ConcurrentBag<ulong>(values));
+
+        /// <summary>
+        /// Adds a command message and response to the cache using the message objects.
+        /// </summary>
+        /// <param name="command">The message that invoked the command.</param>
+        /// <param name="response">The response to the command message.</param>
+        public void Add(IUserMessage command, IUserMessage response) => Add(command.Id, response.Id);
 
         /// <summary>
         /// Clears all items from the cache. Will claim all locks until the operation is complete.
