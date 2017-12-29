@@ -29,9 +29,11 @@ namespace ExampleBot
                 .WithTitle("Bot stats:")
                 .AddField(f => f.WithName("Heap size:").WithValue($"{GC.GetTotalMemory(false) / 1024.0f / 1024.0f} MB").WithIsInline(true))
                 .AddField(f => f.WithName("Discord.Net Version:").WithValue(DiscordConfig.Version).WithIsInline(true))
-                .AddField(f => f.WithName("Total Guilds:").WithValue((Context.Client as DiscordSocketClient).Guilds.Count).WithIsInline(true));
+                .AddField(f => f.WithName("Total Guilds:").WithValue((Context.Client as DiscordSocketClient).Guilds.Count).WithIsInline(true))
+                .AddField(f => f.WithName("Cached Messages").WithValue(Cache.Count).WithIsInline(true));
 
-            var message = await ReplyAsync(string.Empty, embed: embed);
+            // Using Context.Channel because ReplyAsync is overriden to use the command cache.
+            var message = await Context.Channel.SendMessageAsync(string.Empty, embed: embed);
             Cache.Add(Context.Message.Id, message.Id);
         }
 

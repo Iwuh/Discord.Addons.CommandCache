@@ -45,11 +45,12 @@ namespace Discord.Addons.CommandCache
                 _max = capacity;
             }
 
-            _autoClear = new Timer(OnTimerFired, null, 7200000, 7200000); // 7,200,000 ms = 2 hrs
+            // Create a timer that will clear out cached messages older than 2 hours every 30 minutes.
+            _autoClear = new Timer(OnTimerFired, null, 1800000, 1800000);
 
             client.MessageDeleted += OnMessageDeleted;
 
-            _logger(new LogMessage(LogSeverity.Verbose, "Command Cache", $"Service initialised, MessageDeleted successfully hooked."));
+            _logger(new LogMessage(LogSeverity.Verbose, "CmdCache", $"Service initialised, MessageDeleted event handler registered."));
         }
 
         /// <summary>
@@ -86,12 +87,15 @@ namespace Discord.Addons.CommandCache
                 // The left 42 bits represent the timestamp.
                 var orderedKeys = _cache.Keys.OrderBy(k => k >> 22).ToList();
                 // Remove items until we're under the maximum.
-                int i = 0;
-                while (i < removeCount && i < orderedKeys.Count)
+                int successfulRemovals = 0;
+                foreach (var orderedKey in orderedKeys)
                 {
-                    var success = Remove(orderedKeys[i]);
-                    if (success) i++;
+                    if (successfulRemovals >= removeCount) break;
+
+                    var success = Remove(orderedKey);
+                    if (success) successfulRemovals++;
                 }
+
                 // Reset _count to _cache.Count.
                 UpdateCount();
             }
@@ -219,7 +223,7 @@ namespace Discord.Addons.CommandCache
 
             UpdateCount();
 
-            _logger(new LogMessage(LogSeverity.Verbose, "Command Cache", $"Cleaned {removed.Count()} items from the cache."));
+            _logger(new LogMessage(LogSeverity.Verbose, "CmdCache", $"Cleaned {removed.Count()} items from the cache."));
         }
 
         private async Task OnMessageDeleted(Cacheable<IMessage, ulong> cacheable, ISocketMessageChannel channel)
@@ -235,11 +239,10 @@ namespace Discord.Addons.CommandCache
                     }
                     else
                     {
-                        await _logger(new LogMessage(LogSeverity.Warning, "Command Cache", $"{cacheable.Id} deleted but {messageId} does not exist."));
+                        await _logger(new LogMessage(LogSeverity.Warning, "CmdCache", $"{cacheable.Id} deleted but {messageId} does not exist."));
                     }
-                    Remove(cacheable.Id);
-                    Interlocked.Decrement(ref _count);
                 }
+                Remove(cacheable.Id);
             }
         }
 
