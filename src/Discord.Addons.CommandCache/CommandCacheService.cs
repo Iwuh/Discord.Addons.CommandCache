@@ -22,6 +22,8 @@ namespace Discord.Addons.CommandCache
         private Timer _autoClear;
         private Func<LogMessage, Task> _logger;
         private int _count;
+        private bool _disposed;
+        private DiscordSocketClient _client;
 
         /// <summary>
         /// Initialises the cache with a maximum capacity, tracking the client's message deleted event.
@@ -48,9 +50,10 @@ namespace Discord.Addons.CommandCache
             // Create a timer that will clear out cached messages older than 2 hours every 30 minutes.
             _autoClear = new Timer(OnTimerFired, null, 1800000, 1800000);
 
-            client.MessageDeleted += OnMessageDeleted;
+            _client = client;
+            _client.MessageDeleted += OnMessageDeleted;
 
-            _logger(new LogMessage(LogSeverity.Verbose, "CmdCache", $"Service initialised, MessageDeleted event handler registered."));
+            _logger(new LogMessage(LogSeverity.Info, "CmdCache", $"Service initialised, MessageDeleted event handler registered."));
         }
 
         /// <summary>
@@ -198,10 +201,20 @@ namespace Discord.Addons.CommandCache
 
         protected void Dispose(bool disposing)
         {
-            if (disposing && _autoClear != null)
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(CommandCacheService), "Service has been disposed.");
+            }
+            else if (disposing)
             {
                 _autoClear.Dispose();
                 _autoClear = null;
+
+                _client.MessageDeleted -= OnMessageDeleted;
+
+                _disposed = true;
+
+                _logger(new LogMessage(LogSeverity.Info, "CmdCache", "Cache disposed successfully."));
             }
         }
 
