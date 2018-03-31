@@ -16,8 +16,15 @@ _client = new DiscordSocketClient().UseCommandCache(services, 500, Log);
 ```
 You can also have an instance with no size limit by passing `CommandCacheService.UNLIMITED` as `capacity`.
 
-## Adding values to the cache
-When responding to a command, there are two ways to add to the cache. The first is by using the `Add` method:
+## Using the cache in a module
+In order to utilise the command cache, you must add it to a module. While this can be done manually through Discord.Net's dependency injection, an easier method is to have your module implement `CommandCacheModuleBase<TCommandCache, TCacheKey, TCacheValue, TCommandContext>`. This works with any implementation of `ICommandCache<TKey, TValue>`. 
+
+Because that's a quite verbose class name, this package also provides `CommandCacheModuleBase<TCommandContext>` which uses the default implementation of `ICommandCache<TKey, TValue>`.
+
+You can then access the cache through the module's `Cache` property. Responding to commands through `ReplyAsync` will automatically add the messages to the cache.
+
+## Adding values to the cache outside modules
+There are two ways to add a message to the cache without the `ModuleBase` extension. The first is by using the `Add` method:
 ```cs
 var responseMessage = await ReplyAsync("This is a command response");
 _cache.Add(Context.Message.Id, responseMessage.Id);
@@ -26,8 +33,7 @@ The second is by using the `SendCachedMessageAsync` extension method:
 ```cs
 await Context.Channel.SendCachedMessageAsync(_cache, Context.Message.Id, "This is a command response");
 ```
-
-The built in `CommandCacheService` supports multiple response messages per command message, however if you want to add multiple at once you cannot use the extension method.
+This method only works with the default `CommandCacheService` and does not support adding multiple messages at once.
 
 ## Disposing of the cache
 The built in `CommandCacheService` uses a `System.Threading.Timer` internally, so you should call the `Dispose` method in your shutdown logic.
