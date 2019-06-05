@@ -2,16 +2,17 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard1.3</TargetFramework>
-    <Version>2.0.0</Version>
+    <Version>2.1.0</Version>
     <Authors>Iwuh</Authors>
     <Company>Iwuh</Company>
     <Description>Automatically delete command responses when the user's message is deleted.</Description>
-    <PackageLicenseUrl>https://opensource.org/licenses/Apache-2.0</PackageLicenseUrl>
+    <PackageLicenseUrl></PackageLicenseUrl>
     <PackageProjectUrl>https://github.com/Iwuh/Discord.Addons.CommandCache</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Iwuh/Discord.Addons.CommandCache</RepositoryUrl>
     <RepositoryType />
     <PackageTags>discord.net discord</PackageTags>
-    <PackageReleaseNotes>Bug fixes &amp; and adds an extension of ModuleBase that makes the command cache easier to use.</PackageReleaseNotes>
+    <PackageReleaseNotes>Update to latest Discord.NET version.</PackageReleaseNotes>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>
