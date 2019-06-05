@@ -18,12 +18,12 @@ namespace Discord.Addons.CommandCache
 
         private readonly ConcurrentDictionary<ulong, ConcurrentBag<ulong>> _cache
             = new ConcurrentDictionary<ulong, ConcurrentBag<ulong>>();
-        private int _max;
+        private readonly int _max;
         private Timer _autoClear;
-        private Func<LogMessage, Task> _logger;
+        private readonly Func<LogMessage, Task> _logger;
         private int _count;
         private bool _disposed;
-        private DiscordSocketClient _client;
+        private readonly DiscordSocketClient _client;
 
         /// <summary>
         /// Initialises the cache with a maximum capacity, tracking the client's message deleted event.
@@ -129,7 +129,7 @@ namespace Discord.Addons.CommandCache
         {            
             if (!TryGetValue(key, out ConcurrentBag<ulong> bag))
             {
-                Add(key, bag = new ConcurrentBag<ulong>() { value });
+                Add(key, new ConcurrentBag<ulong>() { value });
             }
             else
             {

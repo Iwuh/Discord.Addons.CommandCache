@@ -45,7 +45,7 @@ namespace Discord.Addons.CommandCache
         /// </summary>
         /// <typeparam name="T">The type of values contained in the bag.</typeparam>
         /// <param name="values">The values to add.</param>
-        public static ConcurrentBag<T> AddMany<T>(this ConcurrentBag<T> bag, IEnumerable<T> values)
+        internal static ConcurrentBag<T> AddMany<T>(this ConcurrentBag<T> bag, IEnumerable<T> values)
         {
             foreach (T item in values)
             {
